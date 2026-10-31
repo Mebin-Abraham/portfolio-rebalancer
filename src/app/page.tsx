@@ -51,6 +51,19 @@ export default function HomePage() {
     setMonthlyInflow(0);
   }
 
+  // Clean numeric string parser that strips leading zeros and non-digits
+  function handleHoldingChange(key: keyof AssetAllocation, valStr: string) {
+    const cleaned = valStr.replace(/\D/g, "");
+    const num = cleaned === "" ? 0 : Number(cleaned);
+    setHoldings({ ...holdings, [key]: num });
+  }
+
+  function handleInflowChange(valStr: string) {
+    const cleaned = valStr.replace(/\D/g, "");
+    const num = cleaned === "" ? 0 : Number(cleaned);
+    setMonthlyInflow(num);
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-10 font-sans">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -80,7 +93,6 @@ export default function HomePage() {
             <button
               onClick={handleClearData}
               className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-xs font-semibold px-3 py-2.5 rounded-xl transition"
-              title="Clear saved browser cache"
             >
               Reset / Clear Data
             </button>
@@ -146,17 +158,16 @@ export default function HomePage() {
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
             <h2 className="text-base font-semibold text-white">1. Asset Holdings (₹)</h2>
-            <p className="text-xs text-slate-400">Type your exact holding value in rupees for each asset class:</p>
+            <p className="text-xs text-slate-400">Type your exact holding value in rupees:</p>
             {(["equities", "debt", "commodities"] as const).map((key) => (
               <div key={key} className="flex items-center justify-between gap-4">
                 <label className="text-sm text-slate-300 capitalize w-32">{key}</label>
                 <input
-                  type="number"
-                  step={1000}
-                  value={holdings[key]}
-                  onChange={(e) =>
-                    setHoldings({ ...holdings, [key]: Math.max(0, Number(e.target.value)) })
-                  }
+                  type="text"
+                  inputMode="numeric"
+                  value={holdings[key] === 0 ? "" : holdings[key]}
+                  placeholder="0"
+                  onChange={(e) => handleHoldingChange(key, e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -182,13 +193,14 @@ export default function HomePage() {
               <div key={key} className="flex items-center justify-between gap-4">
                 <label className="text-sm text-slate-300 capitalize w-32">{key} (%)</label>
                 <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={targets[key]}
-                  onChange={(e) =>
-                    setTargets({ ...targets, [key]: Math.max(0, Number(e.target.value)) })
-                  }
+                  type="text"
+                  inputMode="numeric"
+                  value={targets[key] === 0 ? "" : targets[key]}
+                  placeholder="0"
+                  onChange={(e) => {
+                    const cleaned = e.target.value.replace(/\D/g, "");
+                    setTargets({ ...targets, [key]: cleaned === "" ? 0 : Number(cleaned) });
+                  }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -205,10 +217,11 @@ export default function HomePage() {
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400">Amount (₹):</span>
               <input
-                type="number"
-                step={1000}
-                value={monthlyInflow}
-                onChange={(e) => setMonthlyInflow(Math.max(0, Number(e.target.value)))}
+                type="text"
+                inputMode="numeric"
+                value={monthlyInflow === 0 ? "" : monthlyInflow}
+                placeholder="0"
+                onChange={(e) => handleInflowChange(e.target.value)}
                 className="w-36 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-bold text-blue-400 focus:outline-none focus:border-blue-500"
               />
             </div>
