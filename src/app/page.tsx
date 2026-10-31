@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { calculateCashflowRebalance } from "@/lib/rebalancer";
 import { loadSavedPortfolio, savePortfolioState } from "@/lib/storage";
 import { AssetAllocation, RebalanceMode } from "@/types/portfolio";
+import CasUploadModal from "@/components/CasUploadModal";
 
 const DEFAULT_HOLDINGS: AssetAllocation = { equities: 860000, debt: 100000, commodities: 40000 };
 const DEFAULT_TARGETS: AssetAllocation = { equities: 80, debt: 15, commodities: 5 };
@@ -14,9 +15,9 @@ export default function HomePage() {
   const [monthlyInflow, setMonthlyInflow] = useState<number>(50000);
   const [mode, setMode] = useState<RebalanceMode>("inflow_only");
   const [toleranceBand, setToleranceBand] = useState<number>(5.0);
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
-  // Load saved state from browser localStorage on startup
   useEffect(() => {
     const saved = loadSavedPortfolio();
     if (saved) {
@@ -29,7 +30,6 @@ export default function HomePage() {
     setIsLoaded(true);
   }, []);
 
-  // Automatically save whenever user changes any input
   useEffect(() => {
     if (!isLoaded) return;
     savePortfolioState({ holdings, targets, monthlyInflow, mode, toleranceBand });
@@ -43,14 +43,6 @@ export default function HomePage() {
     [holdings, targets, monthlyInflow, mode, toleranceBand]
   );
 
-  function handleResetDemo() {
-    setHoldings(DEFAULT_HOLDINGS);
-    setTargets(DEFAULT_TARGETS);
-    setMonthlyInflow(50000);
-    setMode("inflow_only");
-    setToleranceBand(5.0);
-  }
-
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-10 font-sans">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -62,30 +54,31 @@ export default function HomePage() {
                 Smart Cash-Flow Portfolio Rebalancer
               </h1>
               <span className="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2.5 py-1 rounded-full">
-                Auto-Saved Locally
+                100% On-Device & Private
               </span>
             </div>
             <p className="text-sm text-slate-400 mt-1">
-              Fix portfolio drift using fresh inflows first — or switch to full buy/sell rebalance.
+              Import your CAMS/KFintech CAS statement or adjust holdings manually.
             </p>
           </div>
-          <div className="flex items-center gap-4">
+
+          <div className="flex items-center gap-3">
             <button
-              onClick={handleResetDemo}
-              className="text-xs text-slate-400 hover:text-white border border-slate-800 px-3 py-2 rounded-lg"
+              onClick={() => setIsModalOpen(true)}
+              className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition flex items-center gap-2 shadow-lg shadow-blue-900/30"
             >
-              Reset Demo
+              📄 Import CAS PDF Statement
             </button>
-            <div className="bg-slate-900 border border-slate-800 px-4 py-3 rounded-xl text-right">
-              <span className="text-xs text-slate-400 block">Current Portfolio Value</span>
-              <span className="text-xl font-bold text-emerald-400">
+            <div className="bg-slate-900 border border-slate-800 px-4 py-2.5 rounded-xl text-right">
+              <span className="text-[10px] text-slate-400 block uppercase">Portfolio Value</span>
+              <span className="text-lg font-bold text-emerald-400">
                 ₹{totalPortfolio.toLocaleString("en-IN")}
               </span>
             </div>
           </div>
         </header>
 
-        {/* Mode Selector & Drift Tolerance Band */}
+        {/* Strategy Mode & Corridor */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-900 border border-slate-800 rounded-2xl p-5">
           <div className="space-y-2">
             <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -100,7 +93,7 @@ export default function HomePage() {
                     : "bg-slate-950 text-slate-400 border-slate-800 hover:text-white"
                 }`}
               >
-                Inflow Only (Zero Tax / No Sales)
+                Inflow Only (Zero Tax)
               </button>
               <button
                 onClick={() => setMode("full_rebalance")}
@@ -110,7 +103,7 @@ export default function HomePage() {
                     : "bg-slate-950 text-slate-400 border-slate-800 hover:text-white"
                 }`}
               >
-                Full Rebalance (Sell & Reinvest)
+                Full Rebalance (Sell & Buy)
               </button>
             </div>
           </div>
@@ -131,16 +124,13 @@ export default function HomePage() {
               onChange={(e) => setToleranceBand(Number(e.target.value))}
               className="w-full accent-amber-500 cursor-pointer"
             />
-            <p className="text-xs text-slate-500">
-              Alerts trigger when an asset drifts by more than ±{toleranceBand}% from target.
-            </p>
           </div>
         </section>
 
-        {/* Controls Grid: Holdings & Risk Targets */}
+        {/* Holdings & Targets */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <h2 className="text-base font-semibold text-white">1. Your Current Holdings (₹)</h2>
+            <h2 className="text-base font-semibold text-white">1. Asset Holdings (₹)</h2>
             {(["equities", "debt", "commodities"] as const).map((key) => (
               <div key={key} className="flex items-center justify-between gap-4">
                 <label className="text-sm text-slate-300 capitalize w-32">{key}</label>
@@ -210,15 +200,12 @@ export default function HomePage() {
           />
         </section>
 
-        {/* Actionable Rebalance Output Table */}
+        {/* Action Table */}
         <section className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-slate-800 flex justify-between items-center">
+          <div className="p-5 border-b border-slate-800">
             <h2 className="text-base font-semibold text-white">
               Action Plan (Post-Rebalance Portfolio: ₹{(totalPortfolio + monthlyInflow).toLocaleString("en-IN")})
             </h2>
-            <span className="text-xs text-slate-400">
-              Mode: {mode === "inflow_only" ? "Cash-Flow Only (No Sells)" : "Full Exact Rebalance"}
-            </span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
@@ -290,6 +277,15 @@ export default function HomePage() {
           </div>
         </section>
       </div>
+
+      {/* CAS Upload Modal */}
+      <CasUploadModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onParsed={(parsedHoldings) => {
+          setHoldings(parsedHoldings);
+        }}
+      />
     </main>
   );
 }
