@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
-import { AssetAllocation } from '@/types/portfolio';
+import React, { useState } from "react";
+import { AssetAllocation } from "@/types/portfolio";
+import { parseStatementText } from "@/lib/casParser";
 
 interface CasUploadModalProps {
   isOpen: boolean;
@@ -9,122 +10,147 @@ interface CasUploadModalProps {
   onParsed: (holdings: AssetAllocation) => void;
 }
 
-export interface ParsedHolding {
-  isin: string;
-  schemeName: string;
-  assetClass: 'equities' | 'debt' | 'commodities';
-  currentValue: number;
-}
-
-function classifyAsset(schemeName: string): 'equities' | 'debt' | 'commodities' {
-  const name = schemeName.toUpperCase();
-  if (name.includes('GOLD') || name.includes('SILVER') || name.includes('COMMODIT')) {
-    return 'commodities';
-  }
-  if (
-    name.includes('LIQUID') || name.includes('GILT') || name.includes('BOND') ||
-    name.includes('DEBT') || name.includes('DURATION') || name.includes('OVERNIGHT') ||
-    name.includes('CORPORATE') || name.includes('ARBITRAGE')
-  ) {
-    return 'debt';
-  }
-  return 'equities';
-}
-
-export async function parseCasPdfInBrowser(
-  file: File,
-  password?: string
-): Promise<{ equities: number; debt: number; commodities: number; totalSchemes: number }> {
-  const pdfjsLib = await import('pdfjs-dist');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-  const arrayBuffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, password });
-  const pdf = await loadingTask.promise;
-
-  let fullText = '';
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const pageLines = content.items.map((item: any) => item.str).join(' ');
-    fullText += pageLines + '\n';
-  }
-
-  const totals = { equities: 0, debt: 0, commodities: 0, totalSchemes: 0 };
-  const isinRegex = /(INF[A-Z0-9]{9})[\s\S]*?Closing Unit Balance:\s*([\d,.]+)[\s\S]*?(?:Market Value|Valuation)[^₹\d]*([\d,]+\.\d{2})/gi;
-
-  let match;
-  while ((match = isinRegex.exec(fullText)) !== null) {
-    const currentValue = parseFloat(match[3].replace(/,/g, ''));
-    const snippetStart = Math.max(0, match.index - 120);
-    const rawTitle = fullText.slice(snippetStart, match.index).split('\n').pop()?.trim() || 'Mutual Fund Scheme';
-
-    if (currentValue > 0) {
-      const assetClass = classifyAsset(rawTitle);
-      totals[assetClass] += currentValue;
-      totals.totalSchemes += 1;
-    }
-  }
-
-  return totals;
-}
-
-
 export default function CasUploadModal({ isOpen, onClose, onParsed }: CasUploadModalProps) {
-  const [password, setPassword] = useState('');
-  const [status, setStatus] = useState<'idle' | 'parsing' | 'done' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState('');
-  const fileRef = useRef<File | null>(null);
+  const [tab, setTab] = useState<"pdf" | "text">("pdf");
+  const [password, setPassword] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [rawText, setRawText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  async function handleFile(file: File) {
-    fileRef.current = file;
-    setStatus('parsing');
-    setErrorMsg('');
+  async function handleProcessPdf() {
+    if (!file) return;
+    setLoading(true);
+    setError(null);
     try {
+      const { parseCasPdfInBrowser } = await import("@/lib/casParser");
       const result = await parseCasPdfInBrowser(file, password || undefined);
-      onParsed({ equities: result.equities, debt: result.debt, commodities: result.commodities });
-      setStatus('done');
+      onParsed({
+        equities: Math.round(result.equities),
+        debt: Math.round(result.debt),
+        commodities: Math.round(result.commodities),
+      });
+      setLoading(false);
       onClose();
-    } catch (err: unknown) {
-      setStatus('error');
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to parse PDF.');
+    } catch (err: any) {
+      setError(err?.message || "Failed to decrypt PDF. Try the 'Paste Text' tab above.");
+      setLoading(false);
+    }
+  }
+
+  function handleProcessText() {
+    if (!rawText.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = parseStatementText(rawText);
+      onParsed({
+        equities: Math.round(result.equities),
+        debt: Math.round(result.debt),
+        commodities: Math.round(result.commodities),
+      });
+      setLoading(false);
+      onClose();
+    } catch (err: any) {
+      setError("Could not parse text. Ensure summary values are included.");
+      setLoading(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 text-slate-100 shadow-2xl">
         <div className="flex justify-between items-center">
-          <h2 className="text-base font-semibold text-white">Import CAS PDF Statement</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">×</button>
+          <h3 className="text-lg font-bold">Import Statement Holdings</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-sm">✕</button>
         </div>
 
-        <p className="text-xs text-slate-400">
-          Upload your CAMS or KFintech CAS PDF. It is parsed entirely in your browser — nothing is uploaded.
-        </p>
+        {/* Tab Switcher */}
+        <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <button
+            onClick={() => setTab("pdf")}
+            className={`py-2 text-xs font-semibold rounded-lg transition ${
+              tab === "pdf" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Upload CAS PDF
+          </button>
+          <button
+            onClick={() => setTab("text")}
+            className={`py-2 text-xs font-semibold rounded-lg transition ${
+              tab === "text" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Paste Statement Text (100% Reliable)
+          </button>
+        </div>
 
-        <input
-          type="password"
-          placeholder="PDF password (if any)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-        />
+        {tab === "pdf" ? (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-400">
+              Upload your password-protected CAMS / CDSL / NSDL CAS PDF statement.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">PDF Password (PAN in CAPS)</label>
+              <input
+                type="password"
+                placeholder="e.g., ABCDE1234F"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">Select CAS PDF File</label>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white cursor-pointer"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-400">
+              Open your PDF statement, copy the summary text (e.g. CDSL Demat Accounts 65,956.44, Mutual Fund Folios 40,614.16), and paste it below:
+            </p>
+            <textarea
+              rows={5}
+              placeholder="Paste text here..."
+              value={rawText}
+              onChange={(e) => setRawText(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        )}
 
-        <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-xl p-6 cursor-pointer hover:border-blue-500 transition">
-          <span className="text-2xl mb-1">📄</span>
-          <span className="text-sm text-slate-300">Click to select PDF</span>
-          <input
-            type="file"
-            accept=".pdf"
-            className="hidden"
-            onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
-          />
-        </label>
+        {error && <p className="text-xs text-rose-400">{error}</p>}
 
-        {status === 'parsing' && <p className="text-xs text-blue-400 text-center">Parsing PDF…</p>}
-        {status === 'error' && <p className="text-xs text-rose-400 text-center">{errorMsg}</p>}
+        <div className="flex justify-end gap-3 pt-2">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:bg-slate-800">
+            Cancel
+          </button>
+          {tab === "pdf" ? (
+            <button
+              onClick={handleProcessPdf}
+              disabled={!file || loading}
+              className="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+            >
+              {loading ? "Parsing..." : "Import PDF"}
+            </button>
+          ) : (
+            <button
+              onClick={handleProcessText}
+              disabled={!rawText.trim() || loading}
+              className="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+            >
+              {loading ? "Processing..." : "Import Text Data"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
