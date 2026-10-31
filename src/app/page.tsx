@@ -43,6 +43,14 @@ export default function HomePage() {
     [holdings, targets, monthlyInflow, mode, toleranceBand]
   );
 
+  function handleClearData() {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("rebalancer_portfolio_state_v1");
+    }
+    setHoldings({ equities: 0, debt: 0, commodities: 0 });
+    setMonthlyInflow(0);
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-10 font-sans">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -58,19 +66,26 @@ export default function HomePage() {
               </span>
             </div>
             <p className="text-sm text-slate-400 mt-1">
-              Import your CAMS/KFintech CAS statement or adjust holdings manually.
+              Import your CAMS/KFintech CAS statement or enter your exact portfolio holdings.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <button
               onClick={() => setIsModalOpen(true)}
               className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition flex items-center gap-2 shadow-lg shadow-blue-900/30"
             >
               📄 Import CAS PDF Statement
             </button>
+            <button
+              onClick={handleClearData}
+              className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-xs font-semibold px-3 py-2.5 rounded-xl transition"
+              title="Clear saved browser cache"
+            >
+              Reset / Clear Data
+            </button>
             <div className="bg-slate-900 border border-slate-800 px-4 py-2.5 rounded-xl text-right">
-              <span className="text-[10px] text-slate-400 block uppercase">Portfolio Value</span>
+              <span className="text-[10px] text-slate-400 block uppercase">Total Portfolio</span>
               <span className="text-lg font-bold text-emerald-400">
                 ₹{totalPortfolio.toLocaleString("en-IN")}
               </span>
@@ -131,12 +146,13 @@ export default function HomePage() {
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
             <h2 className="text-base font-semibold text-white">1. Asset Holdings (₹)</h2>
+            <p className="text-xs text-slate-400">Type your exact holding value in rupees for each asset class:</p>
             {(["equities", "debt", "commodities"] as const).map((key) => (
               <div key={key} className="flex items-center justify-between gap-4">
                 <label className="text-sm text-slate-300 capitalize w-32">{key}</label>
                 <input
                   type="number"
-                  step={5000}
+                  step={1000}
                   value={holdings[key]}
                   onChange={(e) =>
                     setHoldings({ ...holdings, [key]: Math.max(0, Number(e.target.value)) })
@@ -160,6 +176,7 @@ export default function HomePage() {
                 Total: {targetSum}% {targetSum !== 100 && "(Must equal 100%)"}
               </span>
             </div>
+            <p className="text-xs text-slate-400">Define your target percentage allocation:</p>
 
             {(["equities", "debt", "commodities"] as const).map((key) => (
               <div key={key} className="flex items-center justify-between gap-4">
@@ -179,20 +196,27 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Monthly Inflow Slider */}
-        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-3">
-          <div className="flex justify-between items-center">
+        {/* Monthly Inflow Slider + Direct Number Input */}
+        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+          <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
             <label className="text-base font-semibold text-white">
               3. Fresh Monthly SIP / Capital Available to Deploy
             </label>
-            <span className="text-xl font-bold text-blue-400">
-              ₹{monthlyInflow.toLocaleString("en-IN")}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Amount (₹):</span>
+              <input
+                type="number"
+                step={1000}
+                value={monthlyInflow}
+                onChange={(e) => setMonthlyInflow(Math.max(0, Number(e.target.value)))}
+                className="w-36 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-bold text-blue-400 focus:outline-none focus:border-blue-500"
+              />
+            </div>
           </div>
           <input
             type="range"
             min={0}
-            max={250000}
+            max={500000}
             step={5000}
             value={monthlyInflow}
             onChange={(e) => setMonthlyInflow(Number(e.target.value))}

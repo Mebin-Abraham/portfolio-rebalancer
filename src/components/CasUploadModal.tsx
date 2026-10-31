@@ -1,12 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
 import { AssetAllocation } from '@/types/portfolio';
-
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-}
 
 interface CasUploadModalProps {
   isOpen: boolean;
@@ -40,6 +35,8 @@ export async function parseCasPdfInBrowser(
   file: File,
   password?: string
 ): Promise<{ equities: number; debt: number; commodities: number; totalSchemes: number }> {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
   const arrayBuffer = await file.arrayBuffer();
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, password });
   const pdf = await loadingTask.promise;
