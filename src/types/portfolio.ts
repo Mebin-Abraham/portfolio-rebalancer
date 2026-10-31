@@ -1,4 +1,5 @@
 export type AssetBucket = 'equities' | 'debt' | 'commodities';
+export type RebalanceMode = 'inflow_only' | 'full_rebalance';
 
 export interface AssetAllocation {
   equities: number;
@@ -13,8 +14,9 @@ export interface RebalanceRow {
   currentWeight: number;
   targetWeight: number;
   drift: number;
-  recommendedInflow: number;
-  postInflowWeight: number;
+  isBreachingBand: boolean;
+  recommendedTrade: number; // Positive = Buy, Negative = Sell
+  postRebalanceWeight: number;
   status: 'OVERWEIGHT' | 'UNDERWEIGHT' | 'ON_TARGET';
   actionText: string;
 }

@@ -1,4 +1,4 @@
-import { AssetAllocation, AssetBucket, RebalanceRow } from '@/types/portfolio';
+import { AssetAllocation, AssetBucket, RebalanceMode, RebalanceRow } from '@/types/portfolio';
 
 const BUCKET_LABELS: Record<AssetBucket, string> = {
   equities: 'Equities (Stocks & Equity MF)',
@@ -8,46 +8,55 @@ const BUCKET_LABELS: Record<AssetBucket, string> = {
 
 export function calculateCashflowRebalance(
   currentValues: AssetAllocation,
-  targetPercentages: AssetAllocation, // e.g., { equities: 80, debt: 15, commodities: 5 }
-  monthlyInflow: number
+  targetPercentages: AssetAllocation,
+  monthlyInflow: number,
+  mode: RebalanceMode = 'inflow_only',
+  toleranceBandPercent: number = 5.0
 ): RebalanceRow[] {
   const buckets: AssetBucket[] = ['equities', 'debt', 'commodities'];
   const currentTotal = buckets.reduce((sum, b) => sum + currentValues[b], 0);
   const projectedTotal = currentTotal + monthlyInflow;
 
-  // Step 1: Calculate rupee shortfall against post-inflow target size
   const shortfalls: Record<AssetBucket, number> = { equities: 0, debt: 0, commodities: 0 };
   let totalShortfall = 0;
 
   for (const b of buckets) {
-    const targetDecimal = targetPercentages[b] / 100;
-    const idealPostValue = projectedTotal * targetDecimal;
+    const idealPostValue = projectedTotal * (targetPercentages[b] / 100);
     const deficit = Math.max(0, idealPostValue - currentValues[b]);
     shortfalls[b] = deficit;
     totalShortfall += deficit;
   }
 
-  // Step 2: Route fresh inflow proportionally into underweight buckets only
   return buckets.map((b) => {
     const curVal = currentValues[b];
     const curWeight = currentTotal > 0 ? (curVal / currentTotal) * 100 : 0;
     const tgtWeight = targetPercentages[b];
     const drift = curWeight - tgtWeight;
+    const isBreachingBand = Math.abs(drift) >= toleranceBandPercent;
 
-    const allocatedInflow =
-      totalShortfall > 0 ? Math.round((shortfalls[b] / totalShortfall) * monthlyInflow) : 0;
+    let recommendedTrade = 0;
+    const idealPostValue = projectedTotal * (tgtWeight / 100);
 
-    const newVal = curVal + allocatedInflow;
-    const postInflowWeight = projectedTotal > 0 ? (newVal / projectedTotal) * 100 : 0;
+    if (mode === 'inflow_only') {
+      recommendedTrade =
+        totalShortfall > 0 ? Math.round((shortfalls[b] / totalShortfall) * monthlyInflow) : 0;
+    } else {
+      recommendedTrade = Math.round(idealPostValue - curVal);
+    }
+
+    const newVal = curVal + recommendedTrade;
+    const postRebalanceWeight = projectedTotal > 0 ? (newVal / projectedTotal) * 100 : 0;
 
     let status: RebalanceRow['status'] = 'ON_TARGET';
     if (drift > 1.0) status = 'OVERWEIGHT';
     if (drift < -1.0) status = 'UNDERWEIGHT';
 
-    let actionText = 'Hold current position';
-    if (allocatedInflow > 0) {
-      actionText = `Buy ₹${allocatedInflow.toLocaleString('en-IN')} via fresh inflow`;
-    } else if (status === 'OVERWEIGHT') {
+    let actionText = 'Within target corridor — Hold';
+    if (recommendedTrade > 0) {
+      actionText = `BUY ₹${recommendedTrade.toLocaleString('en-IN')}`;
+    } else if (recommendedTrade < 0) {
+      actionText = `SELL ₹${Math.abs(recommendedTrade).toLocaleString('en-IN')} & reinvest in underweight`;
+    } else if (status === 'OVERWEIGHT' && mode === 'inflow_only') {
       actionText = 'Pause fresh SIPs (Hold to avoid capital gains tax)';
     }
 
@@ -58,8 +67,9 @@ export function calculateCashflowRebalance(
       currentWeight: Number(curWeight.toFixed(1)),
       targetWeight: tgtWeight,
       drift: Number(drift.toFixed(1)),
-      recommendedInflow: allocatedInflow,
-      postInflowWeight: Number(postInflowWeight.toFixed(1)),
+      isBreachingBand,
+      recommendedTrade,
+      postRebalanceWeight: Number(postRebalanceWeight.toFixed(1)),
       status,
       actionText,
     };
